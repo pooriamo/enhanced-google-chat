@@ -1,20 +1,3 @@
-export async function findTopicsParent(): Promise<HTMLElement | undefined> {
-  return new Promise((resolve) => {
-    let counter = 10;
-    let parent;
-    function tryFinding() {
-      parent = document.querySelector('c-wiz[data-topic-id]')?.parentElement as HTMLElement | undefined;
-      if (!parent && counter-- > 0) {
-        setTimeout(tryFinding, 500);
-      } else {
-        resolve(parent);
-      }
-    }
-
-    tryFinding();
-  })
-}
-
 export function escapeHtml(unsafe: string): string {
   return unsafe
     .replace(/&/g, "&amp;")
@@ -46,34 +29,3 @@ export function copyTextToClipboard(text: string) {
 
   document.body.removeChild(textArea);
 }
-
-// export function observeForThreads() {
-//   const event = new Event('threads-opened');
-//   const mainCWiz = document.querySelector('body > c-wiz');
-//   if (!mainCWiz) return;
-//
-//   let eventSent = false;
-//
-//   const mObserver = new MutationObserver((entries) => {
-//     // let foundElement = false;
-//     entries.forEach((entry) => {
-//       if (eventSent || !entry.addedNodes.length) return;
-//       const xpath = "//div[text()='Thread']";
-//       const matchingElement = document.evaluate(xpath, mainCWiz, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-//       if (matchingElement) {
-//         document.dispatchEvent(event);
-//         eventSent = true;
-//         // foundElement = true;
-//       }
-//     });
-//
-//     // if (eventSent && !foundElement) {
-//     //   eventSent = false;
-//     // }
-//   });
-//
-//   mObserver.observe(mainCWiz, {
-//     childList: true,
-//     subtree: true,
-//   });
-// }
