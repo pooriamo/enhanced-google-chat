@@ -1,7 +1,7 @@
 {
   "name": "Enhanced Google Chat",
   "description": "Adds: Better code highlighting; A button to copy topic links",
-  "version": "1.0",
+  "version": "0.0.1",
   "manifest_version": 3,
   "author": "pooria.morovati@gmail.com",
   "icons": {
