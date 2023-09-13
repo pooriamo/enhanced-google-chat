@@ -20,7 +20,7 @@ hljs.listLanguages().forEach((lang) => {
 });
 
 export function highlightAll() {
-  const result = document.evaluate("//span[text()='```']", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)
+  const result = document.evaluate("//span[normalize-space()='```']", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)
   const elements = [];
   for (let i = 0; i < result.snapshotLength; i++) {
     const node = result.snapshotItem(i);
