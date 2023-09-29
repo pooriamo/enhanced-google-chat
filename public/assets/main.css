@@ -3,6 +3,7 @@ div[data-btn-id=copy-link] {
 }
 
 .egch-menu-btn:hover {
+  transition: background-color 0.3s;
   /*noinspection CssUnresolvedCustomProperty*/
   background-color: var(--dialog-highlighted-bg-color);
 }

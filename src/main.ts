@@ -1,5 +1,5 @@
 import { highlightAll } from "./highlight-code.ts";
-import { addCopyLinkButton } from "./copy-link-button.ts";
+import { addCopyLinkButton, addSavedMessagesButton } from "./copy-link-button.ts";
 
 async function start() {
   if (document.body.dataset.gc_enhanced) return;
@@ -8,10 +8,12 @@ async function start() {
   function enhancePosts() {
     highlightAll();
     addCopyLinkButton();
+    addSavedMessagesButton();
 
     setTimeout(() => {
       highlightAll();
       addCopyLinkButton();
+      addSavedMessagesButton();
     }, 2000);
   }
 

@@ -21,6 +21,18 @@ const savedIcon = `<svg data-saved="0" style="fill: var(--icon-color)" xmlns="ht
 
 let eventListenersRegistered = false;
 
+export function addSavedMessagesButton() {
+  if (document.querySelector('#egch-saved-messages')) return;
+  const parent = document.querySelector('div[data-tooltip="Search in this chat"]')?.parentElement?.parentElement;
+  if (!parent) return;
+
+  parent.insertAdjacentHTML('beforeend', `
+  <div class="egch-menu-btn" title="Saved messages for this chat" id="egch-saved-messages" style="border-radius: 100px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+    ${saveIcon}
+  </div>
+  `)
+}
+
 export function addCopyLinkButton() {
   const menus = [...document.querySelectorAll('div[data-tooltip="More actions"]')];
 
