@@ -17,5 +17,6 @@
       "css": ["assets/main.css", "assets/atom-one-dark.min.css"],
       "all_frames": true
     }
-  ]
+  ],
+  "permissions": ["storage"]
 }
