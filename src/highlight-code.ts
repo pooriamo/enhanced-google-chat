@@ -1,5 +1,5 @@
 import hljs from 'highlight.js';
-import { escapeHtml } from "./utils.ts";
+// import { escapeHtml } from "./utils.ts";
 
 hljs.configure({
   ignoreUnescapedHTML: true,
@@ -19,6 +19,10 @@ hljs.listLanguages().forEach((lang) => {
   });
 });
 
+hljs.addPlugin({
+  "before:highlightElement": ({ el }) => { el.textContent = (el as HTMLElement).innerText }
+});
+
 export function highlightAll() {
   const result = document.evaluate("//span[normalize-space()='```']", document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)
   const elements = [];
@@ -35,19 +39,19 @@ export function highlightAll() {
     if (!codeBlock) return;
 
     const content = codeBlock.innerText;
-    let code = content;
-    const lines = content.split('\n');
+    if (!content) return;
+    const language = codeBlock.firstChild?.textContent?.replace(/\n/g, '').toLowerCase().trim() || '';
+    const hasLanguage = codeBlock.firstChild && aliases.includes(language);
 
-    const hasLanguage = aliases.includes(lines[0].toLocaleLowerCase());
-    let lang = '';
     if (hasLanguage) {
-      code = lines.slice(1).join('\n');
-      lang = ` class="language-${lines[0].toLocaleLowerCase()}"`;
+      codeBlock.firstChild.remove();
+      codeBlock.classList.add(`language-${language}`);
+      const secondChild = codeBlock.firstChild;
+      if (!secondChild?.textContent?.replace(/\n/g, '').trim()) {
+        secondChild?.remove();
+      }
     }
-    codeBlock.insertAdjacentHTML('afterend', '<pre class="theme-stackoverflow-dark"><code'+ lang +'>'+escapeHtml(code)+'</code></pre>');
-    codeBlock.remove();
-    hljs.highlightAll();
-
+    hljs.highlightElement(codeBlock);
     (element as HTMLElement).dataset.highlighted = '1';
   });
 }
