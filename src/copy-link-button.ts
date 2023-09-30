@@ -55,7 +55,7 @@ export function addSavedMessagesButton() {
     const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
 
     if (!(e.target as HTMLElement).closest('#egch-saved-messages')) {
-      if (!(e.target as HTMLElement).closest('#egch-saved-messages-container')) {
+      if (!(e.target as HTMLElement).closest('#egch-saved-messages-container') && container.classList.contains('egch-saved-messages-visible')) {
         console.log(e.target)
 
         container.classList.remove('egch-saved-messages-visible');
