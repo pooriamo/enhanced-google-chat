@@ -1,6 +1,29 @@
 // noinspection CssUnresolvedCustomProperty
 
-import { copyTextToClipboard } from "./utils.ts";
+import { copyTextToClipboard, escapeHtml } from "./utils.ts";
+const STORAGE_KEY = 'egch-saved-topics';
+
+type SavedMessage = {
+  groupId: string,
+  topicId: string | null,
+  messageId: string | null,
+  meta?: {
+    userPic: string,
+    userName: string,
+    date: string,
+    content: string,
+  }
+}
+
+async function getSavedMessages() {
+  const storage = await chrome.storage.sync.get({
+    [STORAGE_KEY]: []
+  }) as {
+    [STORAGE_KEY]: SavedMessage[]
+  };
+
+  return storage[STORAGE_KEY];
+}
 
 const checkIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" style="
     height: 19px;
@@ -26,15 +49,85 @@ export function addSavedMessagesButton() {
   const parent = document.querySelector('div[data-tooltip="Search in this chat"]')?.parentElement?.parentElement;
   if (!parent) return;
 
+  parent.style.position = 'relative';
+
+  document.addEventListener('click', (e) => {
+    const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
+
+    if (!(e.target as HTMLElement).closest('#egch-saved-messages')) {
+      if (!(e.target as HTMLElement).closest('#egch-saved-messages-container')) {
+        console.log(e.target)
+
+        container.classList.remove('egch-saved-messages-visible');
+        container.classList.add('egch-saved-messages-hidden');
+      }
+      return;
+    }
+    displayMessages(container);
+
+    if (!container.classList.length) {
+      container.classList.add('egch-saved-messages-visible');
+    } else {
+      container.classList.toggle('egch-saved-messages-visible');
+      container.classList.toggle('egch-saved-messages-hidden');
+    }
+  });
+
+  document.addEventListener('input', (e) => {
+    const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
+    if(!(e.target as HTMLElement).closest('.egch-saved-messages-search')) return;
+    const value = (e.target as HTMLInputElement).value;
+    displayMessages(container, value);
+  })
+
+  async function displayMessages(container: HTMLElement, filter: string = '') {
+    const mainCWiz = document.querySelector('body > c-wiz') as HTMLElement | null;
+    if (!mainCWiz) return;
+    const currentGroupId = mainCWiz.dataset.groupId;
+    if (!currentGroupId) {
+      console.log('group id not found');
+      return;
+    }
+    const messages = await getSavedMessages();
+    const messagesForThisChat = messages.filter(({ groupId }) => groupId === currentGroupId);
+    const filteredMessages = filter ? messagesForThisChat.filter((msg) => {
+      return msg.meta?.content.toLowerCase().includes(filter.toLowerCase()) || msg.meta?.userName.toLowerCase().includes(filter.toLowerCase())
+    }) : messagesForThisChat;
+
+    const sortedByLastSaved = filteredMessages.map((_, i, arr) => arr[arr.length - i - 1])
+
+    let html = sortedByLastSaved.map((data) => `
+      <a href="${getLink({ groupId: data.groupId, topicId: data.topicId, messageId: data.messageId })}" class="egch-saved-message-item">
+        <div class="egch-saved-message-item-header">
+          ${data.meta?.userPic ? `<img src="${data.meta?.userPic}" alt="${data.meta?.userPic}" />` : ''}
+          <div>${data.meta?.userName} <span class="egch-saved-message-datetime">${data.meta?.date}</span></div>
+        </div>
+        <p class="egch-saved-message-content">${data.meta?.content.slice(0, 100)}...</p>
+      </a>
+    `).join('\n');
+    console.log(messages)
+    html = html ? `${html}` : `<div class="egch-saved-messages-empty">${messagesForThisChat.length ? 'No match found.' : 'No messages are saved yet!'}</div>`;
+
+    (container.querySelector('.egch-saved-messages-main-content') as HTMLElement).innerHTML = html;
+  }
+
   parent.insertAdjacentHTML('beforeend', `
   <div class="egch-menu-btn" title="Saved messages for this chat" id="egch-saved-messages" style="border-radius: 100px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
     ${saveIcon}
   </div>
+  <div id="egch-saved-messages-container">
+    <div>
+        <input class="egch-saved-messages-search" type="text" placeholder="Type to search..." />
+        <div class="egch-saved-messages-main-content"></div>
+    </div>
+  </div>
   `)
 }
 
-export function addCopyLinkButton() {
+export async function addCopyLinkButton() {
   const menus = [...document.querySelectorAll('div[data-tooltip="More actions"]')];
+
+  const savedMessages = await getSavedMessages();
 
   const styles = `height: 28px;
                 margin: 0 0 0 4px;
@@ -51,6 +144,12 @@ export function addCopyLinkButton() {
     if ((menu as HTMLElement)?.parentElement?.querySelector('div[data-btn-id="copy-link"]')) {
       return;
     }
+
+    const info = getMessagesInfo(menu as HTMLElement);
+    const isSaved = savedMessages.some(({ groupId, messageId, topicId }) => {
+      return groupId === info.groupId && messageId === info.messageId && topicId === info.topicId
+    });
+
     menu.insertAdjacentHTML('beforebegin',
       `<div 
               data-btn-id="copy-link"
@@ -61,8 +160,8 @@ export function addCopyLinkButton() {
             <div 
               data-btn-id="save-btn"
               class="egch-menu-btn"
-              style="${styles}" title="save this message">
-              ${saveIcon}
+              style="${styles}" title="${isSaved ? 'Remove from saved messages' : 'save this message'}">
+              ${isSaved ? savedIcon : saveIcon}
             </div>`
     )
   });
@@ -70,6 +169,17 @@ export function addCopyLinkButton() {
   if (!eventListenersRegistered) {
     registerEventListeners();
   }
+}
+
+function getMessagesInfo(target: HTMLElement) {
+  const messageId = (target.closest('div[data-id]') as HTMLElement)?.dataset.id || null;
+  const topicId = (target.closest('c-wiz[data-topic-id]') as HTMLElement)?.dataset.topicId || null;
+  const groupId = (target.closest('*[data-group-id]') as HTMLElement)?.dataset.groupId || null;
+  return { messageId, topicId, groupId };
+}
+
+function getLink({ groupId, topicId, messageId }: Omit<SavedMessage, 'meta'>) {
+  return `https://chat.google.com/${groupId.replace('space/', 'room/')}/${topicId}${!messageId || messageId === topicId ? '' : `/${messageId}`}`;;
 }
 
 function registerEventListeners() {
@@ -80,19 +190,12 @@ function registerEventListeners() {
     const copyButton = target.closest('div[data-btn-id=copy-link]');
     const saveButton = target.closest('div[data-btn-id=save-btn]');
 
-    function getInfo() {
-      const messageId = (target.closest('div[data-id]') as HTMLElement)?.dataset.id;
-      const topicId = (target.closest('c-wiz[data-topic-id]') as HTMLElement)?.dataset.topicId;
-      const groupId = (target.closest('*[data-group-id]') as HTMLElement)?.dataset.groupId;
-      return { messageId, topicId, groupId };
-    }
-
     if (copyButton) {
-      const { messageId, topicId, groupId } = getInfo();
+      const { messageId, topicId, groupId } = getMessagesInfo(target);
 
       if (!groupId || !topicId) return;
 
-      const link = `https://chat.google.com/${groupId.replace('space/', 'room/')}/${topicId}${!messageId || messageId === topicId ? '' : `/${messageId}`}`;
+      const link = getLink({ groupId, topicId, messageId })
       copyTextToClipboard(link);
 
       copyButton.innerHTML = checkIcon;
@@ -102,7 +205,15 @@ function registerEventListeners() {
     }
 
     if (saveButton) {
-      const result = await saveTopic(getInfo());
+      const infoWrapper = saveButton.closest('div[data-user-id]') as HTMLElement;
+      const userPic = (infoWrapper.querySelector('&> div > div > div:first-child > div > div > img') as HTMLImageElement)?.src || '';
+      const userName = infoWrapper.querySelector('&> div > div > div:last-child > div:first-child > span')?.textContent || '';
+      const date = (infoWrapper.querySelector('&> div > div > div:last-child > div:first-child > div > div > span') as HTMLElement)?.dataset?.absoluteTimestamp || '';
+      const isThread = infoWrapper.dataset.isDetailedThreadView;
+      const content = escapeHtml(infoWrapper.querySelector(`&> div ${isThread ? '> div ' : ''}> div > div:last-child > div:nth-child(2) > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child`)?.textContent || '');
+      const result = await saveTopic(getMessagesInfo(target), {
+        userPic, userName, date, content
+      });
 
       console.log(result);
       if (result) {
@@ -117,42 +228,34 @@ function registerEventListeners() {
 }
 
 
-async function saveTopic(data: { messageId: string | undefined, topicId: string | undefined, groupId: string | undefined }) {
+async function saveTopic(data: { messageId: string | null, topicId: string | null, groupId: string | null }, meta: SavedMessage['meta']) {
   if (!data.groupId) {
     console.log('no group id');
     return;
   }
-  const storage = chrome.storage.local;
-  const KEY = 'egch-saved-topics';
-  const currentSaved = await storage.get({
-    [KEY]: []
-  }) as {
-    [KEY]: {
-      groupId: string,
-      topicId: string | null,
-      messageId: string | null,
-    }[]
-  };
+  const storage = chrome.storage.sync;
+  const currentSaved = await getSavedMessages();
 
-  const existingIndex = currentSaved[KEY].findIndex((item) => {
+  const existingIndex = currentSaved.findIndex((item) => {
     return item.topicId === data.topicId && item.groupId === data.groupId && item.messageId === data.messageId;
   });
   if (existingIndex >= 0) {
-    const newData = [...currentSaved[KEY]];
+    const newData = [...currentSaved];
     newData.splice(existingIndex, 1);
-    await chrome.storage.local.set({
-      [KEY]: newData
+    await storage.set({
+      [STORAGE_KEY]: newData
     });
     return false;
   }
 
-  await chrome.storage.local.set({
-    [KEY]: [
-      ...(currentSaved[KEY] || []),
+  await storage.set({
+    [STORAGE_KEY]: [
+      ...(currentSaved || []),
       {
         groupId: data.groupId,
         topicId: data.topicId,
         messageId: data.messageId,
+        meta,
       }
     ]
   });
