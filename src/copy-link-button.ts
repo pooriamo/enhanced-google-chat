@@ -70,6 +70,34 @@ function closeSavedMessages() {
   container.classList.add('egch-saved-messages-hidden');
 }
 
+function getDateFromTimestamp(timestamp: string | number) {
+  try {
+    return new Date(Number(timestamp)).toLocaleString('en-us', { year:"numeric", month:"short", day:"numeric", hour: "2-digit", minute: "2-digit" })
+  } catch {
+    console.error('failed to format time: ' + timestamp)
+    return '-';
+  }
+}
+
+function isCurrentUser(userId: string) {
+  const mainCWiz = document.querySelector('body > c-wiz') as HTMLElement | null;
+  if (!mainCWiz) {
+    console.error('isCurrentUser: main cwiz not found');
+    return;
+  }
+  const stringContainingMyUserId = mainCWiz.dataset.p || '';
+  return stringContainingMyUserId.includes(`"${userId}"`);
+}
+
+function getCurrentGroupId() {
+  const mainCWiz = document.querySelector('body > c-wiz') as HTMLElement | null;
+  if (!mainCWiz) {
+    console.error('getCurrentGroupId: main cwiz not found');
+    return;
+  }
+  return mainCWiz.dataset.groupId;
+}
+
 export function addSavedMessagesButton() {
   if (document.querySelector('#egch-saved-messages')) return;
   const parent = document.querySelector('div[data-tooltip="Search in this chat"]')?.parentElement?.parentElement;
@@ -92,11 +120,16 @@ export function addSavedMessagesButton() {
       return;
     }
 
-    const users = await getUsers();
-
+    const savedMessages = await getSavedMessages();
+    const savedMessagesForThisChat = savedMessages.filter(({ groupId }) => groupId === getCurrentGroupId());
+    const currentChatUserIds = savedMessagesForThisChat.map(({ userId }) => userId);
+    let users = await getUsers();
+    users = users.filter(({ id }) => currentChatUserIds.includes(id));
+    const currentUser = users.find((user) => isCurrentUser(user.id));
+    const meAtFirst = currentUser ? [currentUser, ...users.filter((user) => user.id !== currentUser.id)] : users;
     const usersOptions = [`<option value="all">Everyone</option>`]
-    usersOptions.push(...users.map((user) => (
-      `<option value="${user.id}">${user.name}</option>`
+    usersOptions.push(...meAtFirst.map((user) => (
+      `<option value="${user.id}">${user.name} ${user.id === currentUser?.id ? ' (You)' : ''}</option>`
     )));
     const usersSelect = document.querySelector('#egch-saved-messages-users') as HTMLSelectElement;
     usersSelect.innerHTML = usersOptions.join('\n');
@@ -134,8 +167,7 @@ export function addSavedMessagesButton() {
       console.error('main cwiz not found');
       return;
     }
-    const currentGroupId = mainCWiz.dataset.groupId;
-    const stringContainingMyUserId = mainCWiz.dataset.p || '';
+    const currentGroupId = getCurrentGroupId();
 
     if (!currentGroupId) {
       console.log('group id not found');
@@ -161,12 +193,12 @@ export function addSavedMessagesButton() {
 
     let html = filteredMessages.map((data) => {
       const user = users.find((user) => user.id === data.userId);
-      const userName = user && stringContainingMyUserId.includes(`"${user.id}"`) ? 'Myself' : user?.name;
+      const userName = user && isCurrentUser(user.id) ? 'Myself' : user?.name;
       return `
       <a href="${getLink({ groupId: data.groupId, topicId: data.topicId, messageId: data.messageId })}" class="egch-saved-message-item">
         <div class="egch-saved-message-item-header">
           ${user?.imageUrl ? `<img src="${user.imageUrl}" alt="${user.imageUrl}" />` : ''}
-          <div>${userName || 'Unknown'} <span class="egch-saved-message-datetime">${data.date}</span></div>
+          <div>${userName || 'Unknown'} <span class="egch-saved-message-datetime">${getDateFromTimestamp(data.date)}</span></div>
         </div>
         <p class="egch-saved-message-content">${data.content?.slice(0, 100)}...</p>
       </a>

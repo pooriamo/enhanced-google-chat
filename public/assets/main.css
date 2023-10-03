@@ -123,6 +123,7 @@ code.hljs, span[data-highlighted="1"]+div{
 .egch-saved-message-datetime {
   font-size: 12px;
   opacity: 0.8;
+  margin-left: 8px;
 }
 
 .egch-saved-message-content {
@@ -165,4 +166,8 @@ code.hljs, span[data-highlighted="1"]+div{
   box-sizing: border-box;
   padding: 10px;
   border-radius: 8px;
+}
+
+#egch-saved-messages-users {
+  max-width: 100px;
 }
