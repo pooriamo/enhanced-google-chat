@@ -1,28 +1,48 @@
 // noinspection CssUnresolvedCustomProperty
 
 import { copyTextToClipboard, escapeHtml } from "./utils.ts";
-const STORAGE_KEY = 'egch-saved-topics';
+const STORAGE_KEY_SAVED_MESSAGES = 'egch-saved-topics';
+const STORAGE_KEY_SAVED_MESSAGES_USERS = 'egch-saved-topics-users';
 
-type SavedMessage = {
-  groupId: string,
+type SortValue = 'last_saved' | 'first_saved' | 'last_sent' | 'first_sent';
+
+type MessageIds = {
+  groupId: string | null,
   topicId: string | null,
   messageId: string | null,
-  meta?: {
-    userPic: string,
-    userName: string,
-    date: string,
-    content: string,
-  }
+}
+
+type SavedMessage = MessageIds & {
+  userId: string,
+  content: string,
+  date: string,
+  createdAt: number,
+}
+
+type User = {
+  id: string,
+  imageUrl: string,
+  name: string,
 }
 
 async function getSavedMessages() {
   const storage = await chrome.storage.sync.get({
-    [STORAGE_KEY]: []
+    [STORAGE_KEY_SAVED_MESSAGES]: []
   }) as {
-    [STORAGE_KEY]: SavedMessage[]
+    [STORAGE_KEY_SAVED_MESSAGES]: SavedMessage[]
   };
 
-  return storage[STORAGE_KEY];
+  return storage[STORAGE_KEY_SAVED_MESSAGES];
+}
+
+async function getUsers() {
+  const storage = await chrome.storage.sync.get({
+    [STORAGE_KEY_SAVED_MESSAGES_USERS]: []
+  }) as {
+    [STORAGE_KEY_SAVED_MESSAGES_USERS]: User[]
+  };
+
+  return storage[STORAGE_KEY_SAVED_MESSAGES_USERS];
 }
 
 const checkIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" style="
@@ -44,6 +64,12 @@ const savedIcon = `<svg data-saved="0" style="fill: var(--icon-color)" xmlns="ht
 
 let eventListenersRegistered = false;
 
+function closeSavedMessages() {
+  const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
+  container.classList.remove('egch-saved-messages-visible');
+  container.classList.add('egch-saved-messages-hidden');
+}
+
 export function addSavedMessagesButton() {
   if (document.querySelector('#egch-saved-messages')) return;
   const parent = document.querySelector('div[data-tooltip="Search in this chat"]')?.parentElement?.parentElement;
@@ -51,18 +77,30 @@ export function addSavedMessagesButton() {
 
   parent.style.position = 'relative';
 
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
     const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
+
+    if ((e.target as HTMLElement).closest('.egch-saved-message-item')) {
+      closeSavedMessages();
+      return;
+    }
 
     if (!(e.target as HTMLElement).closest('#egch-saved-messages')) {
       if (!(e.target as HTMLElement).closest('#egch-saved-messages-container') && container.classList.contains('egch-saved-messages-visible')) {
-        console.log(e.target)
-
-        container.classList.remove('egch-saved-messages-visible');
-        container.classList.add('egch-saved-messages-hidden');
+        closeSavedMessages();
       }
       return;
     }
+
+    const users = await getUsers();
+
+    const usersOptions = [`<option value="all">Everyone</option>`]
+    usersOptions.push(...users.map((user) => (
+      `<option value="${user.id}">${user.name}</option>`
+    )));
+    const usersSelect = document.querySelector('#egch-saved-messages-users') as HTMLSelectElement;
+    usersSelect.innerHTML = usersOptions.join('\n');
+
     displayMessages(container);
 
     if (!container.classList.length) {
@@ -78,33 +116,62 @@ export function addSavedMessagesButton() {
     if(!(e.target as HTMLElement).closest('.egch-saved-messages-search')) return;
     const value = (e.target as HTMLInputElement).value;
     displayMessages(container, value);
-  })
+  });
+
+  document.addEventListener('change', (e) => {
+    const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
+    if(!(e.target as HTMLElement).closest('#egch-saved-messages-users') && !(e.target as HTMLElement).closest('#egch-saved-messages-sort')) return;
+    displayMessages(container, (document.querySelector('.egch-saved-messages-search') as HTMLInputElement).value);
+  });
 
   async function displayMessages(container: HTMLElement, filter: string = '') {
+    const sortValue = (document.querySelector('#egch-saved-messages-sort') as HTMLInputElement).value as SortValue;
+    const userFilterValue = (document.querySelector('#egch-saved-messages-users') as HTMLInputElement).value;
+
+    const users = await getUsers();
     const mainCWiz = document.querySelector('body > c-wiz') as HTMLElement | null;
-    if (!mainCWiz) return;
+    if (!mainCWiz) {
+      console.error('main cwiz not found');
+      return;
+    }
     const currentGroupId = mainCWiz.dataset.groupId;
+    const stringContainingMyUserId = mainCWiz.dataset.p || '';
+
     if (!currentGroupId) {
       console.log('group id not found');
       return;
     }
     const messages = await getSavedMessages();
     const messagesForThisChat = messages.filter(({ groupId }) => groupId === currentGroupId);
-    const filteredMessages = filter ? messagesForThisChat.filter((msg) => {
-      return msg.meta?.content.toLowerCase().includes(filter.toLowerCase()) || msg.meta?.userName.toLowerCase().includes(filter.toLowerCase())
-    }) : messagesForThisChat;
+    const filteredMessages = messagesForThisChat.filter((msg) => {
+      const user = users.find((user) => user.id === msg.userId);
+      const isUserSelected = userFilterValue === 'all' ? true : user?.id === userFilterValue;
+      return isUserSelected && (!filter || msg.content.toLowerCase().includes(filter.toLowerCase()) || user?.name.toLowerCase().includes(filter.toLowerCase()))
+    });
 
-    const sortedByLastSaved = filteredMessages.map((_, i, arr) => arr[arr.length - i - 1])
+    if (sortValue === 'last_saved') {
+      filteredMessages.sort((a, b) => b.createdAt - a.createdAt);
+    } else if (sortValue === 'first_saved') {
+      filteredMessages.sort((a, b) => a.createdAt - b.createdAt);
+    } else if (sortValue === 'last_sent') {
+      filteredMessages.sort((a, b) => Number(b.date) - Number(a.date));
+    } else if (sortValue === 'first_sent') {
+      filteredMessages.sort((a, b) => Number(a.date) - Number(b.date));
+    }
 
-    let html = sortedByLastSaved.map((data) => `
+    let html = filteredMessages.map((data) => {
+      const user = users.find((user) => user.id === data.userId);
+      const userName = user && stringContainingMyUserId.includes(`"${user.id}"`) ? 'Myself' : user?.name;
+      return `
       <a href="${getLink({ groupId: data.groupId, topicId: data.topicId, messageId: data.messageId })}" class="egch-saved-message-item">
         <div class="egch-saved-message-item-header">
-          ${data.meta?.userPic ? `<img src="${data.meta?.userPic}" alt="${data.meta?.userPic}" />` : ''}
-          <div>${data.meta?.userName} <span class="egch-saved-message-datetime">${data.meta?.date}</span></div>
+          ${user?.imageUrl ? `<img src="${user.imageUrl}" alt="${user.imageUrl}" />` : ''}
+          <div>${userName || 'Unknown'} <span class="egch-saved-message-datetime">${data.date}</span></div>
         </div>
-        <p class="egch-saved-message-content">${data.meta?.content.slice(0, 100)}...</p>
+        <p class="egch-saved-message-content">${data.content?.slice(0, 100)}...</p>
       </a>
-    `).join('\n');
+    `
+    }).join('\n');
     console.log(messages)
     html = html ? `${html}` : `<div class="egch-saved-messages-empty">${messagesForThisChat.length ? 'No match found.' : 'No messages are saved yet!'}</div>`;
 
@@ -117,7 +184,17 @@ export function addSavedMessagesButton() {
   </div>
   <div id="egch-saved-messages-container">
     <div>
-        <input class="egch-saved-messages-search" type="text" placeholder="Type to search..." />
+        <div class="egch-saved-messages-toolbar">
+          <input class="egch-saved-messages-search" type="text" placeholder="Type to search..." />
+          <select id="egch-saved-messages-sort">
+            <option value="last_saved" selected>By last saved</option>
+            <option value="first_saved">By first saved</option>
+            <option value="last_sent">By last sent</option>
+            <option value="first_sent">By first sent</option>
+          </select>
+          <select id="egch-saved-messages-users">
+          </select>
+        </div>
         <div class="egch-saved-messages-main-content"></div>
     </div>
   </div>
@@ -178,7 +255,11 @@ function getMessagesInfo(target: HTMLElement) {
   return { messageId, topicId, groupId };
 }
 
-function getLink({ groupId, topicId, messageId }: Omit<SavedMessage, 'meta'>) {
+function getLink({ groupId, topicId, messageId }: MessageIds) {
+  if (!groupId) {
+    console.error('getLink: group id is empty');
+    return;
+  }
   return `https://chat.google.com/${groupId.replace('space/', 'room/')}/${topicId}${!messageId || messageId === topicId ? '' : `/${messageId}`}`;;
 }
 
@@ -195,7 +276,11 @@ function registerEventListeners() {
 
       if (!groupId || !topicId) return;
 
-      const link = getLink({ groupId, topicId, messageId })
+      const link = getLink({ groupId, topicId, messageId });
+      if (!link) {
+        console.error('could not get the link');
+        return;
+      }
       copyTextToClipboard(link);
 
       copyButton.innerHTML = checkIcon;
@@ -206,16 +291,29 @@ function registerEventListeners() {
 
     if (saveButton) {
       const infoWrapper = saveButton.closest('div[data-user-id]') as HTMLElement;
-      const userPic = (infoWrapper.querySelector('&> div > div > div:first-child > div > div > img') as HTMLImageElement)?.src || '';
-      const userName = infoWrapper.querySelector('&> div > div > div:last-child > div:first-child > span')?.textContent || '';
-      const date = (infoWrapper.querySelector('&> div > div > div:last-child > div:first-child > div > div > span') as HTMLElement)?.dataset?.absoluteTimestamp || '';
-      const isThread = infoWrapper.dataset.isDetailedThreadView;
-      const content = escapeHtml(infoWrapper.querySelector(`&> div ${isThread ? '> div ' : ''}> div > div:last-child > div:nth-child(2) > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child`)?.textContent || '');
-      const result = await saveTopic(getMessagesInfo(target), {
-        userPic, userName, date, content
-      });
+      const userId = infoWrapper.dataset.userId || '';
+      const isThread = infoWrapper.dataset.isDetailedThreadView === 'true';
 
-      console.log(result);
+      let userPic, userName, date;
+      if (infoWrapper.dataset.isDetailedThreadView === 'true') {
+        userPic = (infoWrapper.querySelector('&> div > div > div > div:first-child > div > div > img') as HTMLImageElement)?.src || '';
+        userName = (infoWrapper.querySelector('&> div > div > div > div:first-child > div > div ') as HTMLElement)?.dataset.name || '';
+        date = (infoWrapper.querySelector('&> div > div > div > div:last-child > div:first-child > div > div > span') as HTMLElement)?.dataset?.absoluteTimestamp || '';
+      } else {
+        userPic = (infoWrapper.querySelector('&> div > div > div:first-child > div > div > img') as HTMLImageElement)?.src || '';
+        userName = (infoWrapper.querySelector('&> div > div > div:last-child > div:first-child > span > span') as HTMLElement)?.dataset.name || '';
+        date = (infoWrapper.querySelector('&> div > div > div:last-child > div:first-child > div > div > span') as HTMLElement)?.dataset?.absoluteTimestamp || '';
+      }
+
+      const content = escapeHtml(infoWrapper.querySelector(`&> div ${isThread ? '> div ' : ''}> div > div:last-child > div:nth-child(2) > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child`)?.textContent || '');
+
+
+      console.log({userPic, userName, date, content})
+      const result = await saveTopic({
+        ...getMessagesInfo(target),
+        userId, date, content, createdAt: Date.now()
+      }, { id: userId, imageUrl: userPic, name: userName  });
+
       if (result) {
         saveButton.innerHTML = savedIcon;
         saveButton.setAttribute('title', 'Remove from saved messages');
@@ -228,7 +326,7 @@ function registerEventListeners() {
 }
 
 
-async function saveTopic(data: { messageId: string | null, topicId: string | null, groupId: string | null }, meta: SavedMessage['meta']) {
+async function saveTopic(data: SavedMessage, user: User) {
   if (!data.groupId) {
     console.log('no group id');
     return;
@@ -240,24 +338,28 @@ async function saveTopic(data: { messageId: string | null, topicId: string | nul
     return item.topicId === data.topicId && item.groupId === data.groupId && item.messageId === data.messageId;
   });
   if (existingIndex >= 0) {
-    const newData = [...currentSaved];
-    newData.splice(existingIndex, 1);
     await storage.set({
-      [STORAGE_KEY]: newData
+      [STORAGE_KEY_SAVED_MESSAGES]: currentSaved.filter((_, i) => i !== existingIndex)
     });
     return false;
   }
 
+  const savedUsers = await getUsers();
+  const newSavedUsers = [
+    ...savedUsers.filter((savedUser) => savedUser.id !== data.userId),
+    user,
+  ];
   await storage.set({
-    [STORAGE_KEY]: [
-      ...(currentSaved || []),
-      {
-        groupId: data.groupId,
-        topicId: data.topicId,
-        messageId: data.messageId,
-        meta,
-      }
-    ]
+    [STORAGE_KEY_SAVED_MESSAGES_USERS]: newSavedUsers,
+  });
+
+  const newSavedMessages: SavedMessage[] = [
+    ...(currentSaved || []),
+    data
+  ];
+
+  await storage.set({
+    [STORAGE_KEY_SAVED_MESSAGES]: newSavedMessages,
   });
   return true;
 }
