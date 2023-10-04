@@ -337,7 +337,11 @@ function registerEventListeners() {
         date = (infoWrapper.querySelector('&> div > div > div:last-child > div:first-child > div > div > span') as HTMLElement)?.dataset?.absoluteTimestamp || '';
       }
 
-      const content = escapeHtml(infoWrapper.querySelector(`&> div ${isThread ? '> div ' : ''}> div > div:last-child > div:nth-child(2) > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child`)?.textContent || '');
+      let contentDiv = infoWrapper.querySelector(`&> div ${isThread ? '> div ' : ''}> div > div:last-child > div:nth-child(2) > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child`);
+      if (contentDiv?.firstChild?.nodeName === 'DIV') {
+        contentDiv = contentDiv.firstChild as Element;
+      }
+      const content = escapeHtml(contentDiv?.textContent || '');
 
 
       console.log({userPic, userName, date, content})
