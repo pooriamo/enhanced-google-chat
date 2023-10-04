@@ -30,6 +30,7 @@ code.hljs, span[data-highlighted="1"]+div{
   opacity: 0;
   backdrop-filter: blur(10px);
   transform: scale(0.3);
+  overflow: hidden;
 }
 
 #egch-saved-messages-container > div {
@@ -38,8 +39,9 @@ code.hljs, span[data-highlighted="1"]+div{
   overflow-y: auto;
   padding: 10px;
   height: calc(100% - 5px);
-  max-height: 500px;
+  max-height: inherit;
   margin-top: 5px;
+  box-sizing: border-box;
 }
 
 #egch-saved-messages-container div {
