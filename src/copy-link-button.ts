@@ -98,6 +98,98 @@ function getCurrentGroupId() {
   return mainCWiz.dataset.groupId;
 }
 
+async function displayMessages(container: HTMLElement, filter: string = '') {
+  const sortValue = (document.querySelector('#egch-saved-messages-sort') as HTMLInputElement).value as SortValue;
+  const userFilterValue = (document.querySelector('#egch-saved-messages-users') as HTMLInputElement).value;
+
+  const users = await getUsers();
+  const mainCWiz = document.querySelector('body > c-wiz') as HTMLElement | null;
+  if (!mainCWiz) {
+    console.error('main cwiz not found');
+    return;
+  }
+  const currentGroupId = getCurrentGroupId();
+
+  if (!currentGroupId) {
+    console.log('group id not found');
+    return;
+  }
+  const messages = await getSavedMessages();
+  const messagesForThisChat = messages.filter(({ groupId }) => groupId === currentGroupId);
+  const filteredMessages = messagesForThisChat.filter((msg) => {
+    const user = users.find((user) => user.id === msg.userId);
+    const isUserSelected = userFilterValue === 'all' ? true : user?.id === userFilterValue;
+    return isUserSelected && (!filter || msg.content.toLowerCase().includes(filter.toLowerCase()) || user?.name.toLowerCase().includes(filter.toLowerCase()))
+  });
+
+  if (sortValue === 'last_saved') {
+    filteredMessages.sort((a, b) => b.createdAt - a.createdAt);
+  } else if (sortValue === 'first_saved') {
+    filteredMessages.sort((a, b) => a.createdAt - b.createdAt);
+  } else if (sortValue === 'last_sent') {
+    filteredMessages.sort((a, b) => Number(b.date) - Number(a.date));
+  } else if (sortValue === 'first_sent') {
+    filteredMessages.sort((a, b) => Number(a.date) - Number(b.date));
+  }
+
+  let html = filteredMessages.map((data) => {
+    const user = users.find((user) => user.id === data.userId);
+    const userName = user && isCurrentUser(user.id) ? 'Myself' : user?.name;
+    return `
+      <a href="${getLink({ groupId: data.groupId, topicId: data.topicId, messageId: data.messageId })}" class="egch-saved-message-item">
+        <div class="egch-saved-message-item-header">
+          ${user?.imageUrl ? `<img src="${user.imageUrl}" alt="${user.imageUrl}" />` : ''}
+          <div>${userName || 'Unknown'} <span class="egch-saved-message-datetime">${getDateFromTimestamp(data.date)}</span></div>
+        </div>
+        <p class="egch-saved-message-content">${data.content?.slice(0, 100)}...</p>
+      </a>
+    `
+  }).join('\n');
+  console.log(messages)
+  html = html ? `${html}` : `<div class="egch-saved-messages-empty">${messagesForThisChat.length ? 'No match found.' : 'No messages are saved yet!'}</div>`;
+
+  (container.querySelector('.egch-saved-messages-main-content') as HTMLElement).innerHTML = html;
+}
+
+async function handleSavedMessagesClick(e: MouseEvent) {
+  const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
+
+  if ((e.target as HTMLElement).closest('.egch-saved-message-item')) {
+    closeSavedMessages();
+    return;
+  }
+
+  if (!(e.target as HTMLElement).closest('#egch-saved-messages')) {
+    if (!(e.target as HTMLElement).closest('#egch-saved-messages-container') && container.classList.contains('egch-saved-messages-visible')) {
+      closeSavedMessages();
+    }
+    return;
+  }
+
+  const savedMessages = await getSavedMessages();
+  const savedMessagesForThisChat = savedMessages.filter(({ groupId }) => groupId === getCurrentGroupId());
+  const currentChatUserIds = savedMessagesForThisChat.map(({ userId }) => userId);
+  let users = await getUsers();
+  users = users.filter(({ id }) => currentChatUserIds.includes(id));
+  const currentUser = users.find((user) => isCurrentUser(user.id));
+  const meAtFirst = currentUser ? [currentUser, ...users.filter((user) => user.id !== currentUser.id)] : users;
+  const usersOptions = [`<option value="all">Everyone</option>`]
+  usersOptions.push(...meAtFirst.map((user) => (
+    `<option value="${user.id}">${user.name} ${user.id === currentUser?.id ? ' (You)' : ''}</option>`
+  )));
+  const usersSelect = document.querySelector('#egch-saved-messages-users') as HTMLSelectElement;
+  usersSelect.innerHTML = usersOptions.join('\n');
+
+  displayMessages(container);
+
+  if (!container.classList.length) {
+    container.classList.add('egch-saved-messages-visible');
+  } else {
+    container.classList.toggle('egch-saved-messages-visible');
+    container.classList.toggle('egch-saved-messages-hidden');
+  }
+}
+
 export function addSavedMessagesButton() {
   if (document.querySelector('#egch-saved-messages')) return;
   const parent = document.querySelector('div[data-tooltip="Search in this chat"]')?.parentElement?.parentElement;
@@ -105,44 +197,7 @@ export function addSavedMessagesButton() {
 
   parent.style.position = 'relative';
 
-  document.addEventListener('click', async (e) => {
-    const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
-
-    if ((e.target as HTMLElement).closest('.egch-saved-message-item')) {
-      closeSavedMessages();
-      return;
-    }
-
-    if (!(e.target as HTMLElement).closest('#egch-saved-messages')) {
-      if (!(e.target as HTMLElement).closest('#egch-saved-messages-container') && container.classList.contains('egch-saved-messages-visible')) {
-        closeSavedMessages();
-      }
-      return;
-    }
-
-    const savedMessages = await getSavedMessages();
-    const savedMessagesForThisChat = savedMessages.filter(({ groupId }) => groupId === getCurrentGroupId());
-    const currentChatUserIds = savedMessagesForThisChat.map(({ userId }) => userId);
-    let users = await getUsers();
-    users = users.filter(({ id }) => currentChatUserIds.includes(id));
-    const currentUser = users.find((user) => isCurrentUser(user.id));
-    const meAtFirst = currentUser ? [currentUser, ...users.filter((user) => user.id !== currentUser.id)] : users;
-    const usersOptions = [`<option value="all">Everyone</option>`]
-    usersOptions.push(...meAtFirst.map((user) => (
-      `<option value="${user.id}">${user.name} ${user.id === currentUser?.id ? ' (You)' : ''}</option>`
-    )));
-    const usersSelect = document.querySelector('#egch-saved-messages-users') as HTMLSelectElement;
-    usersSelect.innerHTML = usersOptions.join('\n');
-
-    displayMessages(container);
-
-    if (!container.classList.length) {
-      container.classList.add('egch-saved-messages-visible');
-    } else {
-      container.classList.toggle('egch-saved-messages-visible');
-      container.classList.toggle('egch-saved-messages-hidden');
-    }
-  });
+  document.addEventListener('click', handleSavedMessagesClick);
 
   document.addEventListener('input', (e) => {
     const container = document.querySelector('#egch-saved-messages-container') as HTMLElement;
@@ -156,59 +211,6 @@ export function addSavedMessagesButton() {
     if(!(e.target as HTMLElement).closest('#egch-saved-messages-users') && !(e.target as HTMLElement).closest('#egch-saved-messages-sort')) return;
     displayMessages(container, (document.querySelector('.egch-saved-messages-search') as HTMLInputElement).value);
   });
-
-  async function displayMessages(container: HTMLElement, filter: string = '') {
-    const sortValue = (document.querySelector('#egch-saved-messages-sort') as HTMLInputElement).value as SortValue;
-    const userFilterValue = (document.querySelector('#egch-saved-messages-users') as HTMLInputElement).value;
-
-    const users = await getUsers();
-    const mainCWiz = document.querySelector('body > c-wiz') as HTMLElement | null;
-    if (!mainCWiz) {
-      console.error('main cwiz not found');
-      return;
-    }
-    const currentGroupId = getCurrentGroupId();
-
-    if (!currentGroupId) {
-      console.log('group id not found');
-      return;
-    }
-    const messages = await getSavedMessages();
-    const messagesForThisChat = messages.filter(({ groupId }) => groupId === currentGroupId);
-    const filteredMessages = messagesForThisChat.filter((msg) => {
-      const user = users.find((user) => user.id === msg.userId);
-      const isUserSelected = userFilterValue === 'all' ? true : user?.id === userFilterValue;
-      return isUserSelected && (!filter || msg.content.toLowerCase().includes(filter.toLowerCase()) || user?.name.toLowerCase().includes(filter.toLowerCase()))
-    });
-
-    if (sortValue === 'last_saved') {
-      filteredMessages.sort((a, b) => b.createdAt - a.createdAt);
-    } else if (sortValue === 'first_saved') {
-      filteredMessages.sort((a, b) => a.createdAt - b.createdAt);
-    } else if (sortValue === 'last_sent') {
-      filteredMessages.sort((a, b) => Number(b.date) - Number(a.date));
-    } else if (sortValue === 'first_sent') {
-      filteredMessages.sort((a, b) => Number(a.date) - Number(b.date));
-    }
-
-    let html = filteredMessages.map((data) => {
-      const user = users.find((user) => user.id === data.userId);
-      const userName = user && isCurrentUser(user.id) ? 'Myself' : user?.name;
-      return `
-      <a href="${getLink({ groupId: data.groupId, topicId: data.topicId, messageId: data.messageId })}" class="egch-saved-message-item">
-        <div class="egch-saved-message-item-header">
-          ${user?.imageUrl ? `<img src="${user.imageUrl}" alt="${user.imageUrl}" />` : ''}
-          <div>${userName || 'Unknown'} <span class="egch-saved-message-datetime">${getDateFromTimestamp(data.date)}</span></div>
-        </div>
-        <p class="egch-saved-message-content">${data.content?.slice(0, 100)}...</p>
-      </a>
-    `
-    }).join('\n');
-    console.log(messages)
-    html = html ? `${html}` : `<div class="egch-saved-messages-empty">${messagesForThisChat.length ? 'No match found.' : 'No messages are saved yet!'}</div>`;
-
-    (container.querySelector('.egch-saved-messages-main-content') as HTMLElement).innerHTML = html;
-  }
 
   parent.insertAdjacentHTML('beforeend', `
   <div class="egch-menu-btn" title="Saved messages for this chat" id="egch-saved-messages" style="border-radius: 100px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
