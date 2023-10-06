@@ -10,12 +10,12 @@ const aliases: string[] = [];
 hljs.listLanguages().forEach((lang) => {
   const data = hljs.getLanguage(lang);
 
-  if (!data?.aliases && data?.name && !aliases.includes(data.name)) {
-    aliases.push(data.name);
+  if (data?.name && !aliases.includes(data.name)) {
+    aliases.push(data.name.toLowerCase());
   }
 
   data?.aliases?.forEach((alias) => {
-    if (!aliases.includes(alias)) aliases.push(alias);
+    if (!aliases.includes(alias)) aliases.push(alias.toLowerCase());
   });
 });
 
@@ -41,7 +41,7 @@ export function highlightAll() {
     const content = codeBlock.innerText;
     if (!content) return;
     const language = codeBlock.firstChild?.textContent?.replace(/\n/g, '').toLowerCase().trim() || '';
-    const hasLanguage = codeBlock.firstChild && aliases.includes(language);
+    const hasLanguage = codeBlock.firstChild && aliases.includes(language.toLowerCase());
 
     if (hasLanguage) {
       codeBlock.firstChild.remove();
